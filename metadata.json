@@ -1,0 +1,5 @@
+{
+  "name": "File Audit Master",
+  "description": "A Windows-style application to select a project folder, monitor for changes, view detailed reports, and filter by date. Includes an AI-powered change analysis feature.",
+  "requestFramePermissions": []
+}

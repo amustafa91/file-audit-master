@@ -1,0 +1,64 @@
+{
+  "name": "file-audit-master",
+  "version": "1.0.0",
+  "description": "A Windows-style Electron application to monitor file changes and provide AI-powered analysis.",
+  "main": "electron.js",
+  "scripts": {
+    "start": "echo \"\n\nERROR: This project uses a two-terminal setup for development.\n\n1. Run 'npm run dev:ui' in the first terminal.\n2. Run 'npm run dev:electron' in the second terminal.\n\nSee SETUP.md for more details.\n\n\" && exit 1",
+    "dev:ui": "vite",
+    "dev:electron": "npm run build:service && electron .",
+    "build:ui": "vite build",
+    "build:service": "esbuild background-service.js --bundle --platform=node --outfile=dist-service/background.js",
+    "build": "npm run build:ui && npm run build:service",
+    "start:prod": "electron .",
+    "package": "npm run build && electron-builder"
+  },
+  "keywords": [
+    "Electron",
+    "React",
+    "File Watcher",
+    "Audit",
+    "Service"
+  ],
+  "author": "AI Assistant",
+  "license": "MIT",
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "diff": "^5.2.0",
+    "electron-store": "^8.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "electron": "^31.0.2",
+    "electron-builder": "^24.13.3",
+    "esbuild": "^0.21.4",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "vite": "^5.3.1"
+  },
+  "build": {
+    "appId": "com.electron.fileauditmaster",
+    "productName": "File Audit Master",
+    "files": [
+      "dist/",
+      "dist-service/",
+      "electron.js",
+      "preload.js"
+    ],
+    "asarUnpack": [
+      "dist-service/background.js"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
