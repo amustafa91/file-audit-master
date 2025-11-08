@@ -6,11 +6,11 @@
   "scripts": {
     "start": "echo \"\n\nERROR: This project uses a two-terminal setup for development.\n\n1. Run 'npm run dev:ui' in the first terminal.\n2. Run 'npm run dev:electron' in the second terminal.\n\nSee SETUP.md for more details.\n\n\" && exit 1",
     "dev:ui": "vite",
-    "dev:electron": "npm run build:service && electron .",
+    "dev:electron": "npm run build:service && \"./node_modules/.bin/electron\" .",
     "build:ui": "vite build",
     "build:service": "esbuild background-service.js --bundle --platform=node --outfile=dist-service/background.js",
     "build": "npm run build:ui && npm run build:service",
-    "start:prod": "electron .",
+    "start:prod": "\"./node_modules/.bin/electron\" .",
     "package": "npm run build && electron-builder",
     "package:win": "npm run build && electron-builder --win",
     "package:mac": "npm run build && electron-builder --mac",
@@ -26,6 +26,7 @@
   "author": "AI Assistant",
   "license": "MIT",
   "dependencies": {
+    "@google/genai": "^0.15.0",
     "chokidar": "^3.6.0",
     "diff": "^5.2.0",
     "electron-store": "^8.2.0"

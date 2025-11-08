@@ -207,7 +207,6 @@ function createWindow() {
 
   if (!app.isPackaged) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, 'dist/index.html'));
   }
@@ -628,6 +627,39 @@ ipcMain.handle('export-filtered-logs', async (ipcEvent, { projectPath, startDate
     } catch (error) {
         console.error('Failed to save CSV file:', error);
         return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('analyze-change', async (ipcEvent, diff) => {
+    if (!process.env.API_KEY) {
+        console.error('Gemini API key is not set. Please set the API_KEY environment variable.');
+        return 'Error: API key is not configured. The application must be launched with the API_KEY environment variable set.';
+    }
+    if (!diff) {
+        return 'Error: No diff content provided to analyze.';
+    }
+
+    try {
+        const { GoogleGenAI } = await import('@google/genai');
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const prompt = `You are a helpful code analysis assistant. Your task is to explain a code change to a project manager or a non-technical user. Focus on the 'what' and 'why' of the change, not just the technical details. Keep your explanation concise and clear.
+
+Here is the diff of the change:
+---
+${diff}
+---
+
+Please provide a summary of this change.`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+        });
+
+        return response.text;
+    } catch (error) {
+        console.error('Error calling Gemini API:', error);
+        return `An error occurred while analyzing the change: ${error.message}`;
     }
 });
 

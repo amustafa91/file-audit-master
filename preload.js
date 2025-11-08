@@ -41,4 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // New settings APIs
   getAutoStartSettings: () => ipcRenderer.invoke('get-auto-start-settings'),
   setAutoStartSettings: (isEnabled) => ipcRenderer.invoke('set-auto-start-settings', isEnabled),
+
+  // New AI Feature
+  analyzeChange: (diff) => ipcRenderer.invoke('analyze-change', diff),
 });

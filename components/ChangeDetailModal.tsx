@@ -2,11 +2,23 @@ import React, { useState, useEffect } from 'react';
 import Modal from '/components/Modal.tsx';
 import { FileChangeEvent, ChangeDetails, StructuredPatch } from '/types.ts';
 import * as diff from 'diff';
+import Icon from './Icon.tsx';
 
 interface ChangeDetailModalProps {
   event: FileChangeEvent | null;
   onClose: () => void;
 }
+
+const patchToString = (patch: StructuredPatch): string => {
+    let diffText = `--- ${patch.oldFileName}\n+++ ${patch.newFileName}\n`;
+    patch.hunks.forEach(hunk => {
+        diffText += `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@\n`;
+        hunk.lines.forEach(line => {
+            diffText += `${line}\n`;
+        });
+    });
+    return diffText;
+};
 
 const StructuredDiff: React.FC<{ patch: StructuredPatch }> = ({ patch }) => {
   return (
@@ -104,11 +116,14 @@ const DiffViewer: React.FC<{ details: ChangeDetails }> = ({ details }) => {
 const ChangeDetailModal: React.FC<ChangeDetailModalProps> = ({ event, onClose }) => {
   const [details, setDetails] = useState<ChangeDetails | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
     if (event) {
       setIsLoading(true);
       setDetails(null);
+      setAiAnalysis(null);
       window.electronAPI.getChangeDetails(event.id, event.projectPath)
         .then(data => {
           setDetails(data);
@@ -120,6 +135,22 @@ const ChangeDetailModal: React.FC<ChangeDetailModalProps> = ({ event, onClose })
     }
   }, [event]);
 
+  const handleAnalyze = async () => {
+    if (!details?.patch || isAnalyzing) return;
+    setIsAnalyzing(true);
+    setAiAnalysis(null);
+    try {
+        const diffString = patchToString(details.patch);
+        const analysis = await window.electronAPI.analyzeChange(diffString);
+        setAiAnalysis(analysis);
+    } catch (error) {
+        console.error("AI Analysis failed:", error);
+        setAiAnalysis("Failed to get analysis. Please check the application logs for more details.");
+    } finally {
+        setIsAnalyzing(false);
+    }
+  };
+
   if (!event) return null;
 
   return (
@@ -128,13 +159,45 @@ const ChangeDetailModal: React.FC<ChangeDetailModalProps> = ({ event, onClose })
       onClose={onClose}
       title={`Details for: ${event.path}`}
       maxWidth="max-w-4xl"
+      actions={
+        details?.patch && (
+          <button 
+            onClick={handleAnalyze} 
+            disabled={isAnalyzing}
+            className="flex items-center justify-center px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          >
+            <Icon name="sparkles" className="w-4 h-4 mr-1.5" />
+            {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
+          </button>
+        )
+      }
     >
       {isLoading && (
         <div className="flex justify-center items-center h-48">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
       )}
+
       {details && <DiffViewer details={details} />}
+      
+      {isAnalyzing && (
+        <div className="mt-4 flex items-center justify-center p-4 border-t border-border">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500 mr-3"></div>
+          <span className="text-text-secondary">AI is analyzing the changes...</span>
+        </div>
+      )}
+      {aiAnalysis && (
+        <div className="mt-4 pt-4 border-t border-border">
+          <h4 className="font-semibold text-text-primary mb-2 flex items-center">
+            <Icon name="sparkles" className="w-5 h-5 mr-2 text-purple-500" />
+            AI Analysis
+          </h4>
+          <div className="bg-purple-50 p-3 rounded-md text-sm text-text-primary border border-purple-200">
+            <pre className="whitespace-pre-wrap font-sans bg-transparent p-0">{aiAnalysis}</pre>
+          </div>
+        </div>
+      )}
+
       {!isLoading && !details && (
         <div className="text-center text-text-secondary h-48 flex items-center justify-center">
             Could not load change details.

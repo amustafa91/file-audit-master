@@ -90,6 +90,9 @@ export interface IElectronAPI {
   // New settings APIs
   getAutoStartSettings: () => Promise<{ isEnabled: boolean }>;
   setAutoStartSettings: (isEnabled: boolean) => Promise<void>;
+
+  // New AI Feature
+  analyzeChange: (diff: string) => Promise<string>;
 }
 
 declare global {

@@ -3,12 +3,13 @@ import React from 'react';
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title: React.ReactNode;
   children: React.ReactNode;
   maxWidth?: string;
+  actions?: React.ReactNode;
 }
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, maxWidth = 'max-w-lg' }) => {
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, maxWidth = 'max-w-lg', actions }) => {
   if (!isOpen) return null;
 
   return (
@@ -20,8 +21,9 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, maxWidt
         className={`bg-base-100 rounded-lg border border-border w-full ${maxWidth} m-4 flex flex-col max-h-[80vh] transform transition-all shadow-2xl`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-4 border-b border-border flex-shrink-0">
+        <div className="p-4 border-b border-border flex justify-between items-center flex-shrink-0">
           <h2 className="text-lg font-semibold text-text-primary truncate">{title}</h2>
+          {actions && <div className="flex items-center gap-2">{actions}</div>}
         </div>
         <div className="p-6 pt-4 text-sm overflow-y-auto">
           {children}
