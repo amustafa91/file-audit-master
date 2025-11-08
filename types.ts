@@ -35,7 +35,34 @@ export interface GetFilteredLogsParams {
   endDate: string;
   searchTerm: string;
   focusedPath: string | null;
+  page: number;
+  pageSize: number;
 }
+
+export interface ReportSummary {
+  [ChangeType.CREATED]: number;
+  [ChangeType.MODIFIED]: number;
+  [ChangeType.DELETED]: number;
+}
+
+export interface UserSummary {
+  [key: string]: number;
+}
+
+export interface GetFilteredLogsResponse {
+  logs: FileChangeEvent[];
+  totalCount: number;
+  summary: ReportSummary;
+  userSummary: UserSummary;
+}
+
+export interface LogMessage {
+  timestamp: string;
+  source: 'Main' | 'Service';
+  type: 'log' | 'error';
+  message: string;
+}
+
 
 export interface IElectronAPI {
   getCurrentUser: () => Promise<string>;
@@ -46,11 +73,23 @@ export interface IElectronAPI {
   addFolder: () => Promise<{ project: Project } | { isExisting: boolean, path: string } | null>;
   removeFolder: (folderPath: string) => Promise<void>;
   onFileChange: (callback: (event: FileChangeEvent) => void) => () => void;
-  getFilteredLogs: (params: GetFilteredLogsParams) => Promise<FileChangeEvent[]>;
+  getFilteredLogs: (params: GetFilteredLogsParams) => Promise<GetFilteredLogsResponse>;
   getChangeDetails: (eventId: string, projectPath: string) => Promise<ChangeDetails | null>;
+  // FIX: Add `setActiveProject` to the interface to match the implementation in `preload.js` and fix the compile error in `App.tsx`.
+  setActiveProject: (projectPath: string | null) => void;
   getServiceStatus: () => Promise<{ status: ServiceStatus }>;
   startService: () => Promise<{ success: boolean }>;
   stopService: () => Promise<{ success: boolean }>;
+  exportFilteredLogs: (params: Omit<GetFilteredLogsParams, 'page' | 'pageSize'>) => Promise<{ success: boolean; path?: string; error?: string }>;
+  
+  // New logging APIs
+  getLogHistory: () => Promise<LogMessage[]>;
+  clearLogHistory: () => Promise<void>;
+  onLogMessage: (callback: (message: LogMessage) => void) => () => void;
+
+  // New settings APIs
+  getAutoStartSettings: () => Promise<{ isEnabled: boolean }>;
+  setAutoStartSettings: (isEnabled: boolean) => Promise<void>;
 }
 
 declare global {

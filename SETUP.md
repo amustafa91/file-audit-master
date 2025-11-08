@@ -134,32 +134,63 @@ For the application and the final installer to have a custom icon, you **must** 
 
 ### Author Name is Incorrect (e.g., Always 'Administrator')
 
-This is a common and complex issue on multi-user servers. It stems from how Windows Server permissions work, **not a bug in the application itself**.
+This is the most common and complex issue on multi-user servers. It almost always stems from how Windows Server permissions are configured, **not a bug in the application itself**.
 
-#### The Cause: File "Owner" vs. The User Who *Saved* the File
+#### Step 1: Understand the Cause
 
--   The application determines the "Author" by asking Windows for the legal **"Owner"** of the file.
--   On many servers, shared folders are configured for security so that all new files are automatically owned by a single group (like `Administrators`), regardless of which user creates them.
--   Because our setup guide recommends running the service as an Administrator (to ensure it can see all file changes), the service correctly queries the file owner and gets the answer: `Administrator`.
+-   The application determines the "Author" by asking Windows for the legal **"Owner"** of the file at the moment it was saved.
+-   On many servers, for security, shared folders are configured so that all new files are automatically "owned" by a single group (like `Administrators`), regardless of which user creates them.
+-   The application is accurately reporting the *legal owner*, but the server configuration makes that owner different from the *user who last saved the file*.
 
-Essentially, the application is accurately reporting the *legal owner* of the file, which on your server is not the same as the *user who last saved it*.
+#### Step 2: How to Manually Verify the Issue (The Definitive Test)
 
-#### The Solution: Adjusting Server-Side Folder Permissions
+Before changing any settings, perform this simple test on the server. This will confirm if the server environment is the cause.
 
-The only reliable way to fix this is to configure the monitored project folder so that the user who creates a file automatically becomes its owner. This requires an administrator.
+1.  Log into the server with a **standard user account** (e.g., `John.Doe`, **NOT** an administrator account).
+2.  Navigate to one of the monitored project folders.
+3.  Create a **brand new file** (e.g., right-click -> New -> Text Document) and save it.
+4.  **Right-click** on the new file you just created and select **Properties**.
+5.  Go to the **Security** tab and click the **Advanced** button.
+6.  At the top of the "Advanced Security Settings" window, look at the `Owner` field.
 
-1.  **Right-click** the main project folder you are monitoring and go to **Properties**.
-2.  Go to the **Security** tab and click **Advanced**.
-3.  In the Advanced Security Settings, you can see the current `Owner`. If this is `Administrators`, it confirms the source of the issue.
-4.  An administrator needs to adjust the folder's security settings to apply the **"CREATOR OWNER"** principle, which ensures the user who creates an object becomes its owner.
+**Interpreting the Results:**
+-   **If the `Owner` IS the user you are logged in as (e.g., `John.Doe`):** This means the `CREATOR OWNER` rule is working for new files. The "Administrator" author you see in the app is likely for *older, existing files* that were created before the rule was applied.
+-   **If the `Owner` is `Administrators` or `SYSTEM`:** You have confirmed the issue. The server is actively re-assigning file ownership, overriding the user who created it. Proceed to Step 3.
 
-#### What If This Doesn't Work? A Note on Technical Limitations
+#### Step 3: The Solution (Applying 'CREATOR OWNER' Correctly)
 
-In some corporate environments, company-wide rules called **Group Policy Objects (GPOs)** can override any folder-level permission changes an administrator makes.
+If the test in Step 2 failed, the `CREATOR OWNER` permission is the correct solution. Your screenshot shows you have already done this, which is excellent. Please double-check the following settings with your administrator to ensure they are perfect.
 
-If the author name is still incorrect after attempting the fix above, it is highly likely that a GPO is enforcing file ownership. In this situation, it is technically infeasible for a background service like this one to reliably determine which user modified a file.
+1.  **Open Advanced Security Settings:**
+    *   Right-click on the main project folder being monitored.
+    *   Select **Properties** -> **Security** tab -> **Advanced** button.
 
-If you face this issue, you can speak with your system administrator and ask specifically: **"Can you configure this folder so that the 'CREATOR OWNER' principle applies to new files, and can you confirm that no Group Policy is overriding this setting?"**
+2.  **Confirm You are on the 'Permissions' Tab:**
+    *   The window has multiple tabs (`Permissions`, `Auditing`, etc.). Ensure the **Permissions** tab is selected.
+
+    > **⚠️ CRITICAL: Use 'Permissions', NOT 'Auditing'**
+    > Adding the rule to the "Auditing" tab will not work. It **must** be on the **"Permissions"** tab.
+
+3.  **Check the 'CREATOR OWNER' Rule:**
+    *   Find the `CREATOR OWNER` entry in the list and double-click it.
+    *   Verify the settings are exactly as follows:
+        *   **Principal:** `CREATOR OWNER`
+        *   **Type:** `Allow`
+        *   **Applies to:** **`Subfolders and files only`** (This is a critical step!)
+        *   **Basic permissions:** The **`Full control`** box should be checked.
+
+4.  **Apply the Changes:**
+    *   Click **OK** on all windows to save the settings.
+    *   **Crucially, re-run the test from Step 2** by creating another brand new file as a standard user. If the owner is now correct, the problem is solved for all future files.
+
+#### Step 4: What If It *Still* Doesn't Work? (Group Policy)
+
+If you have perfectly applied the `CREATOR OWNER` rule and the test in Step 2 *still* shows `Administrators` as the owner of a brand new file, the cause is almost certainly a **Group Policy Object (GPO)**.
+
+-   A GPO is a company-wide rule set by domain administrators that can override any local folder permission changes.
+-   This is a common security measure in corporate environments.
+-   In this situation, it is technically impossible for the application to determine the correct user because Windows itself is being forced to assign ownership to `Administrators`.
+-   **This is not a bug in the application, but an environmental limitation.** You will need to discuss this with your domain/system administrator. They are the only ones who can modify a GPO.
 
 ### Packaging Fails with "A required privilege is not held by the client"
 
@@ -180,7 +211,7 @@ For a permanent solution, enable Developer Mode in Windows Settings.
 
 ---
 
-## 9. Frequently Asked Questions (FAQ)
+## 9. Frequently Asked questions (FAQ)
 
 ### Q: Do my end-users need to install Node.js to use this application?
 

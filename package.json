@@ -25,10 +25,7 @@
   "dependencies": {
     "chokidar": "^3.6.0",
     "diff": "^5.2.0",
-    "electron-store": "^8.2.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "recharts": "^2.12.7"
+    "electron-store": "^8.2.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
@@ -37,6 +34,9 @@
     "electron-builder": "^24.13.3",
     "esbuild": "^0.21.4",
     "postcss": "^8.4.38",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "recharts": "^2.12.7",
     "tailwindcss": "^3.4.4",
     "vite": "^5.3.1"
   },
@@ -44,13 +44,15 @@
     "appId": "com.electron.fileauditmaster",
     "productName": "File Audit Master",
     "files": [
-      "dist/",
-      "dist-service/",
+      "dist/**/*",
+      "dist-service/**/*",
       "electron.js",
-      "preload.js"
+      "preload.js",
+      "package.json",
+      "build/**/*"
     ],
     "asarUnpack": [
-      "dist-service/background.js"
+      "**/dist-service/background.js"
     ],
     "win": {
       "target": "nsis",

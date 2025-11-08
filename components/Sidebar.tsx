@@ -11,6 +11,8 @@ interface SidebarProps {
   onAddProject: () => void;
   focusedPath: string | null;
   onFocusNode: (path: string) => void;
+  onViewLogs: () => void;
+  onOpenSettings: () => void;
 }
 
 interface TreeNodeProps {
@@ -69,7 +71,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, focusedPath, onFocusNode, lev
   );
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ projects, activeProjectPath, onSetActiveProject, onRemoveProject, onAddProject, focusedPath, onFocusNode }) => {
+const Sidebar: React.FC<SidebarProps> = ({ projects, activeProjectPath, onSetActiveProject, onRemoveProject, onAddProject, focusedPath, onFocusNode, onViewLogs, onOpenSettings }) => {
   const activeProject = projects.find(p => p.path === activeProjectPath);
   return (
     <aside className="w-72 bg-base-200 border-r border-border flex-shrink-0 flex flex-col">
@@ -117,7 +119,7 @@ const Sidebar: React.FC<SidebarProps> = ({ projects, activeProjectPath, onSetAct
       </div>
       
       {/* This component is now a "sticky footer" outside the scrollable area */}
-      <ServiceStatus />
+      <ServiceStatus onViewLogs={onViewLogs} onOpenSettings={onOpenSettings} />
     </aside>
   );
 };

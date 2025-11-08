@@ -7,6 +7,9 @@ const Store = require('electron-store');
 const diff = require('diff');
 const crypto = require('crypto');
 const { fork } = require('child_process');
+const { createInterface } = require('readline');
+const { createReadStream } = require('fs');
+const chokidar = require('chokidar');
 
 // By setting the app name explicitly, we ensure that app.getPath('userData')
 // resolves to a predictable location (.../AppData/Roaming/file-audit-master).
@@ -16,10 +19,107 @@ app.setName('file-audit-master');
 const store = new Store();
 let mainWindow = null;
 let watcherService = null; // Holds the child process instance for the current session
+let logFileWatcher = null; // Holds the chokidar instance for watching the active log file
+let logHistory = [];
 
 const LOG_FILE_NAME = 'change_log.json';
 const SNAPSHOTS_DIR_NAME = 'snapshots';
 const pidFilePath = path.join(app.getPath('userData'), 'service.pid');
+const STORE_KEY_AUTO_START = 'settings.autoStartServiceOnLogin';
+
+// === Centralized Logging ===
+function addLog(source, type, message) {
+    const logEntry = {
+        timestamp: new Date().toISOString(),
+        source,
+        type,
+        message,
+    };
+    logHistory.push(logEntry);
+    if (logHistory.length > 500) {
+        logHistory.shift(); // Keep buffer from growing indefinitely
+    }
+    if (mainWindow) {
+        mainWindow.webContents.send('on-log-message', logEntry);
+    }
+}
+
+// Override console methods to capture logs from the main process
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+console.log = (...args) => {
+    const message = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+    addLog('Main', 'log', message);
+    originalConsoleLog.apply(console, args);
+};
+console.error = (...args) => {
+    const message = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+    addLog('Main', 'error', message);
+    originalConsoleError.apply(console, args);
+};
+
+/**
+ * Checks if a log file is in the legacy JSON array format and migrates it to NDJSON.
+ * This is a one-time operation per file to ensure backward compatibility.
+ * @param {string} logPath The full path to the log file.
+ */
+async function migrateLogFileIfNeeded(logPath) {
+    if (!fsSync.existsSync(logPath)) {
+        return; // File doesn't exist, nothing to migrate.
+    }
+    if (fsSync.statSync(logPath).size === 0) {
+        return; // File is empty.
+    }
+
+    let fileHandle;
+    try {
+        fileHandle = await fs.open(logPath, 'r');
+        const buffer = Buffer.alloc(1);
+        await fileHandle.read(buffer, 0, 1, 0);
+        const firstChar = buffer.toString('utf8').trim();
+        
+        // If the file starts with '{', it's already NDJSON.
+        if (firstChar !== '[') {
+            return;
+        }
+    } catch (e) {
+        console.error(`Error checking log format for ${logPath}:`, e);
+        return; // Can't read the file, so we can't migrate it.
+    } finally {
+        if (fileHandle) await fileHandle.close();
+    }
+
+    console.log(`Legacy log format detected at ${logPath}. Migrating to NDJSON...`);
+    const backupPath = logPath + '.bak';
+    const corruptPath = logPath + '.corrupt';
+
+    try {
+        // 1. Securely back up the old file.
+        await fs.rename(logPath, backupPath);
+
+        // 2. Read the entire old file and parse it.
+        const oldContent = await fs.readFile(backupPath, 'utf8');
+        const oldLogs = JSON.parse(oldContent);
+        if (!Array.isArray(oldLogs)) {
+            throw new Error('Legacy log is not a valid JSON array.');
+        }
+
+        // 3. Convert to NDJSON and write to the original file path.
+        const ndjsonContent = oldLogs.map(log => JSON.stringify(log)).join('\n') + (oldLogs.length > 0 ? '\n' : '');
+        await fs.writeFile(logPath, ndjsonContent, 'utf8');
+
+        console.log(`Successfully migrated ${oldLogs.length} records for ${path.basename(logPath)}.`);
+    } catch (err) {
+        console.error(`Failed to migrate log file. Original file moved to ${corruptPath}`, err);
+        // If migration fails, move the bad backup file to a .corrupt file to prevent retrying on a bad file.
+        try {
+            await fs.rename(backupPath, corruptPath);
+        } catch (renameErr) {
+            console.error(`Could not move backup to corrupt path:`, renameErr);
+        }
+    }
+}
+
 
 function getProjectId(folderPath) {
     return crypto.createHash('sha256').update(folderPath).digest('hex');
@@ -49,20 +149,6 @@ async function ensureProjectDirsExist(projectPath) {
 
 function getLogPath(projectPath) {
     return path.join(getProjectDataPath(projectPath), LOG_FILE_NAME);
-}
-
-async function readLogs(projectPath) {
-    try {
-        const logPath = getLogPath(projectPath);
-        const data = await fs.readFile(logPath, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        if (error.code === 'ENOENT') {
-            return [];
-        }
-        console.error(`Error reading log file for ${projectPath}:`, error);
-        return [];
-    }
 }
 
 async function getFileContent(filePath) {
@@ -103,6 +189,8 @@ async function buildTree(dirPath, name) {
 }
 
 function createWindow() {
+  const iconPath = path.join(__dirname, 'build/icon.ico');
+  
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -113,6 +201,8 @@ function createWindow() {
     },
     frame: false, 
     titleBarStyle: 'hidden',
+    // FEAT: Explicitly set the window icon for consistency across dev and prod.
+    icon: fsSync.existsSync(iconPath) ? iconPath : undefined,
   });
 
   if (!app.isPackaged) {
@@ -121,6 +211,19 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, 'dist/index.html'));
   }
+
+  // If launched with '--hidden', start minimized.
+  if (process.argv.includes('--hidden')) {
+    mainWindow.minimize();
+  }
+
+  mainWindow.on('closed', () => {
+    if (logFileWatcher) {
+      logFileWatcher.close();
+      logFileWatcher = null;
+    }
+    mainWindow = null;
+  });
 }
 
 // === Service Management using a detached child_process ===
@@ -169,6 +272,15 @@ const startOrRestartService = async () => {
       ? path.join(process.resourcesPath, 'app.asar.unpacked', serviceScriptName)
       : path.join(__dirname, serviceScriptName);
 
+    // FIX: Add a critical check to ensure the service script exists before trying to fork it.
+    // This prevents silent failures if the packaging process fails.
+    if (!fsSync.existsSync(scriptPath)) {
+        const errorMsg = `The background monitoring service script could not be found. Please try reinstalling the application.\n\nExpected path: ${scriptPath}`;
+        console.error(errorMsg);
+        dialog.showErrorBox('Service Error', errorMsg);
+        return { success: false, message: 'Service script not found.' };
+    }
+
     const userDataPath = app.getPath('userData');
 
     console.log(`Attempting to start service from: ${scriptPath}`);
@@ -180,25 +292,40 @@ const startOrRestartService = async () => {
             USER_DATA_PATH: userDataPath
         },
         detached: true,
-        stdio: 'ignore' // Detach stdio to allow parent to exit cleanly
+        // FIX: Use 'ignore' for stdio pipes but keep 'ipc' for log messages.
+        // This is a robust way to communicate that prevents the service from
+        // crashing with an EPIPE error when the parent application exits.
+        stdio: ['ignore', 'ignore', 'ignore', 'ipc']
     });
 
+    // FIX: Added comprehensive error and exit listeners for robust diagnostics.
+    watcherService.on('error', (err) => {
+        console.error('Failed to start watcher service process:', err);
+    });
+
+    watcherService.on('exit', (code, signal) => {
+        if (code !== 0 && code !== null) {
+            console.error(`Watcher service exited unexpectedly with code: ${code}`);
+        } else if (signal) {
+            console.log(`Watcher service exited with signal: ${signal}`);
+        } else {
+            console.log(`Watcher service exited cleanly with code: ${code}`);
+        }
+    });
+
+    // FIX: Listen for log messages over the resilient IPC channel instead of stdout/stderr.
+    watcherService.on('message', (message) => {
+        if (message.type === 'log' && message.payload) {
+            addLog('Service', message.payload.type, message.payload.message);
+        }
+    });
+    
     // Store the PID to manage the process later.
     await fs.writeFile(pidFilePath, watcherService.pid.toString());
     console.log(`Service started with PID: ${watcherService.pid} and detached.`);
 
     // Unreference the child process, allowing the parent to exit independently.
     watcherService.unref();
-    
-    // The handle to the child process (`watcherService`) is only for the current app session.
-    // If the app is closed and reopened, this handle will be lost, but the process
-    // will continue running. It can be stopped using the stored PID.
-    // Live updates to the UI will work for the current session.
-    watcherService.on('message', (event) => {
-        if (mainWindow) {
-            mainWindow.webContents.send('file-change-event', event);
-        }
-    });
 
     return { success: true };
 };
@@ -211,6 +338,42 @@ ipcMain.on('maximize-window', () => {
 });
 ipcMain.on('close-window', () => mainWindow.close());
 ipcMain.handle('get-current-user', () => os.userInfo().username);
+
+// This handler sets up a watcher on the active project's log file for real-time updates.
+ipcMain.on('set-active-project', (event, projectPath) => {
+    if (logFileWatcher) {
+        logFileWatcher.close();
+        logFileWatcher = null;
+    }
+
+    if (!projectPath || !mainWindow) {
+        return;
+    }
+    
+    const logPath = getLogPath(projectPath);
+    console.log(`Main process is now watching log file for real-time updates: ${logPath}`);
+
+    // FIX: Use polling to ensure file changes are detected reliably, especially
+    // for files within the AppData directory where native events can be flaky.
+    logFileWatcher = chokidar.watch(logPath, { 
+        persistent: true, 
+        ignoreInitial: true,
+        disableGlobbing: true,
+        usePolling: true,
+        interval: 1000,
+    });
+
+    // An 'add' event fires when the file is first created.
+    // A 'change' event fires on subsequent writes.
+    logFileWatcher.on('all', (event, path) => {
+        console.log(`Log file event '${event}' detected for ${projectPath}. Notifying UI.`);
+        if (mainWindow) {
+            mainWindow.webContents.send('file-change-event', { projectPath });
+        }
+    });
+
+    logFileWatcher.on('error', error => console.error(`Log Watcher error: ${error}`));
+});
 
 ipcMain.handle('get-initial-data', async () => {
     const watchedProjects = store.get('watchedProjects', []);
@@ -250,7 +413,7 @@ ipcMain.handle('add-folder', async () => {
 
     const rootNode = await buildTree(folderPath, projectName);
     
-    startOrRestartService();
+    await startOrRestartService();
 
     return {
         project: { ...newProject, rootNode },
@@ -262,11 +425,19 @@ ipcMain.handle('remove-folder', async (event, folderPath) => {
     const updatedProjects = watchedProjects.filter(p => p.path !== folderPath);
     store.set('watchedProjects', updatedProjects);
     
-    startOrRestartService();
+    await startOrRestartService();
 });
 
-ipcMain.handle('get-filtered-logs', async (ipcEvent, { projectPath, startDate, endDate, searchTerm, focusedPath }) => {
-    const allLogs = await readLogs(projectPath);
+ipcMain.handle('get-filtered-logs', async (ipcEvent, { projectPath, startDate, endDate, searchTerm, focusedPath, page, pageSize }) => {
+    const logPath = getLogPath(projectPath);
+    await migrateLogFileIfNeeded(logPath);
+
+    try {
+        await fs.access(logPath);
+    } catch (e) {
+        // File doesn't exist, return empty results.
+        return { logs: [], totalCount: 0, summary: { CREATED: 0, MODIFIED: 0, DELETED: 0 }, userSummary: {} };
+    }
 
     const start = new Date(startDate);
     start.setHours(0, 0, 0, 0);
@@ -276,34 +447,82 @@ ipcMain.handle('get-filtered-logs', async (ipcEvent, { projectPath, startDate, e
     const term = searchTerm.toLowerCase();
 
     const pathPrefix = (focusedPath && focusedPath !== projectPath && focusedPath.startsWith(projectPath))
-      ? focusedPath.substring(projectPath.length).replace(/^\\|^\//, '')
+      ? path.relative(projectPath, focusedPath)
       : null;
 
-    return allLogs.filter(change => {
-      const changeDate = new Date(change.timestamp);
-      const isDateMatch = changeDate >= start && changeDate <= end;
-      if (!isDateMatch) return false;
-
-      if (pathPrefix && !change.path.startsWith(pathPrefix)) {
-        return false;
-      }
-
-      if (term) {
-        const isPathMatch = change.path.toLowerCase().includes(term);
-        const isUserMatch = change.user.toLowerCase().includes(term);
-        return isPathMatch || isUserMatch;
-      }
-      
-      return true;
+    const filteredLogs = [];
+    const summary = { CREATED: 0, MODIFIED: 0, DELETED: 0 };
+    const userSummary = {};
+    
+    const rl = createInterface({
+        input: createReadStream(logPath),
+        crlfDelay: Infinity
     });
+
+    for await (const line of rl) {
+        if (line.trim() === '') continue;
+
+        try {
+            const change = JSON.parse(line);
+            const changeDate = new Date(change.timestamp);
+
+            // Apply filters
+            if (changeDate < start || changeDate > end) continue;
+
+            if (pathPrefix && !change.path.startsWith(pathPrefix)) continue;
+            
+            if (term) {
+                const isPathMatch = change.path.toLowerCase().includes(term);
+                const isUserMatch = change.user.toLowerCase().includes(term);
+                if (!isPathMatch && !isUserMatch) continue;
+            }
+
+            // If it passes all filters, process it
+            filteredLogs.push(change);
+            summary[change.type] = (summary[change.type] || 0) + 1;
+            userSummary[change.user] = (userSummary[change.user] || 0) + 1;
+
+        } catch (e) {
+            console.error('Failed to parse log line:', line, e);
+        }
+    }
+
+    // Sort newest-first, as the file is oldest-first (append-only).
+    filteredLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    const totalCount = filteredLogs.length;
+    const startIndex = (page - 1) * pageSize;
+    const paginatedLogs = filteredLogs.slice(startIndex, startIndex + pageSize);
+    
+    return { logs: paginatedLogs, totalCount, summary, userSummary };
 });
 
 ipcMain.handle('get-change-details', async (ipcEvent, { eventId, projectPath }) => {
-    // FIX: Read logs from disk instead of relying on an in-memory cache to reduce memory usage.
-    const projectLogs = await readLogs(projectPath);
-    if (!projectLogs) return null;
-    
-    const event = projectLogs.find(log => log.id === eventId);
+    const logPath = getLogPath(projectPath);
+    await migrateLogFileIfNeeded(logPath);
+    let event = null;
+
+    try {
+        const rl = createInterface({
+            input: createReadStream(logPath),
+            crlfDelay: Infinity
+        });
+
+        for await (const line of rl) {
+            if (line.includes(eventId)) {
+                const parsedLine = JSON.parse(line);
+                if (parsedLine.id === eventId) {
+                    event = parsedLine;
+                    rl.close(); // Stop reading once found
+                    break;
+                }
+            }
+        }
+    } catch (e) {
+        if (e.code !== 'ENOENT') console.error('Error reading log for details:', e);
+        return null;
+    }
+
     if (!event) return null;
 
     let contentAfter = null;
@@ -325,8 +544,97 @@ ipcMain.handle('get-change-details', async (ipcEvent, { eventId, projectPath }) 
     return result;
 });
 
+function logsToCsv(logs) {
+    if (logs.length === 0) return '';
+    const headers = ['id', 'type', 'path', 'timestamp', 'user', 'projectPath'];
+    const csvRows = [headers.join(',')];
+    for (const log of logs) {
+        const values = headers.map(header => {
+            const escaped = ('' + log[header]).replace(/"/g, '""');
+            return `"${escaped}"`;
+        });
+        csvRows.push(values.join(','));
+    }
+    return csvRows.join('\n');
+}
+
+ipcMain.handle('export-filtered-logs', async (ipcEvent, { projectPath, startDate, endDate, searchTerm, focusedPath }) => {
+    const logPath = getLogPath(projectPath);
+    await migrateLogFileIfNeeded(logPath);
+
+    try {
+        await fs.access(logPath);
+    } catch (e) {
+        return { success: false, error: 'No log file found.' };
+    }
+
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    
+    const term = searchTerm.toLowerCase();
+
+    const pathPrefix = (focusedPath && focusedPath !== projectPath && focusedPath.startsWith(projectPath))
+      ? path.relative(projectPath, focusedPath)
+      : null;
+
+    const filteredLogs = [];
+    
+    const rl = createInterface({
+        input: createReadStream(logPath),
+        crlfDelay: Infinity
+    });
+
+    for await (const line of rl) {
+        if (line.trim() === '') continue;
+        try {
+            const change = JSON.parse(line);
+            const changeDate = new Date(change.timestamp);
+            if (changeDate < start || changeDate > end) continue;
+            if (pathPrefix && !change.path.startsWith(pathPrefix)) continue;
+            if (term) {
+                const isPathMatch = change.path.toLowerCase().includes(term);
+                const isUserMatch = change.user.toLowerCase().includes(term);
+                if (!isPathMatch && !isUserMatch) continue;
+            }
+            filteredLogs.push(change);
+        } catch (e) {
+            console.error('Failed to parse log line during export:', line, e);
+        }
+    }
+    
+    filteredLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    const csvContent = logsToCsv(filteredLogs);
+    
+    const defaultFileName = `FileAuditReport_${new Date().toISOString().split('T')[0]}.csv`;
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: 'Export Report to CSV',
+        defaultPath: defaultFileName,
+        filters: [
+            { name: 'CSV Files', extensions: ['csv'] },
+            { name: 'All Files', extensions: ['*'] }
+        ]
+    });
+
+    if (canceled || !filePath) {
+        return { success: true, path: null };
+    }
+
+    try {
+        await fs.writeFile(filePath, csvContent, 'utf8');
+        return { success: true, path: filePath };
+    } catch (error) {
+        console.error('Failed to save CSV file:', error);
+        return { success: false, error: error.message };
+    }
+});
+
 // === Service Management IPC Handlers ===
-ipcMain.handle('start-service', () => startOrRestartService());
+ipcMain.handle('start-service', async () => {
+    return await startOrRestartService();
+});
 
 ipcMain.handle('stop-service', () => stopServiceLogic());
 
@@ -353,9 +661,35 @@ ipcMain.handle('get-service-status', async () => {
     return { status: 'stopped' };
 });
 
+// === Auto-Start Settings IPC Handlers ===
+ipcMain.handle('get-auto-start-settings', () => {
+    return { isEnabled: store.get(STORE_KEY_AUTO_START, false) };
+});
+
+ipcMain.handle('set-auto-start-settings', (event, isEnabled) => {
+    store.set(STORE_KEY_AUTO_START, isEnabled);
+    app.setLoginItemSettings({
+        openAtLogin: isEnabled,
+        // Pass '--hidden' to start minimized if enabled. This is crucial.
+        args: isEnabled ? ['--hidden'] : []
+    });
+});
+
+// === Logging IPC Handlers ===
+ipcMain.handle('get-log-history', () => logHistory);
+ipcMain.handle('clear-log-history', () => {
+    logHistory = [];
+});
 
 // === App Lifecycle ===
 app.whenReady().then(() => {
+  // Apply auto-start setting on launch, before creating the window
+  const isAutoStartEnabled = store.get(STORE_KEY_AUTO_START, false);
+  app.setLoginItemSettings({
+      openAtLogin: isAutoStartEnabled,
+      args: isAutoStartEnabled ? ['--hidden'] : []
+  });
+
   createWindow();
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

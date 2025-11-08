@@ -1,12 +1,19 @@
 import React from 'react';
 import { FileChangeEvent, ChangeType } from '/types.ts';
 import Icon from '/components/Icon.tsx';
+import Pagination from '/components/Pagination.tsx';
+import Spinner from '/components/Spinner.tsx';
 
 interface ChangeLogProps {
   changes: FileChangeEvent[];
   onViewDetails: (event: FileChangeEvent) => void;
   searchTerm: string;
   onSearchTermChange: (term: string) => void;
+  isLoading: boolean;
+  currentPage: number;
+  totalLogs: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
 }
 
 const ChangeTypePill: React.FC<{ type: ChangeType }> = ({ type }) => {
@@ -39,7 +46,7 @@ const ChangeLogHeader = () => (
     </div>
 );
 
-const ChangeLog: React.FC<ChangeLogProps> = ({ changes, onViewDetails, searchTerm, onSearchTermChange }) => {
+const ChangeLog: React.FC<ChangeLogProps> = ({ changes, onViewDetails, searchTerm, onSearchTermChange, isLoading, currentPage, totalLogs, pageSize, onPageChange }) => {
   return (
     <div className="bg-base-100 rounded-lg border border-border p-4 flex flex-col">
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
@@ -57,7 +64,12 @@ const ChangeLog: React.FC<ChangeLogProps> = ({ changes, onViewDetails, searchTer
           />
         </div>
       </div>
-      <div className="border rounded-md overflow-auto" style={{ minHeight: '200px', maxHeight: '40vh' }}>
+      <div className="border rounded-md overflow-auto relative" style={{ minHeight: '200px', maxHeight: '40vh' }}>
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-20">
+              <Spinner size={8} />
+            </div>
+          )}
           {changes.length > 0 ? (
             <div className="min-w-[700px]">
               <ChangeLogHeader />
@@ -83,14 +95,23 @@ const ChangeLog: React.FC<ChangeLogProps> = ({ changes, onViewDetails, searchTer
           ) : (
             <div className="flex items-center justify-center text-center text-text-secondary h-full">
               <p>
-                  {searchTerm 
+                  {!isLoading && (
+                    searchTerm 
                       ? "No changes match your search."
                       : "No changes recorded for the selected period."
-                  }
+                  )}
               </p>
             </div>
           )}
       </div>
+      {totalLogs > pageSize && (
+         <Pagination 
+            currentPage={currentPage}
+            totalItems={totalLogs}
+            pageSize={pageSize}
+            onPageChange={onPageChange}
+        />
+      )}
     </div>
   );
 };

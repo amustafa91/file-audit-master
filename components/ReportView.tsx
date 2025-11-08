@@ -1,31 +1,21 @@
 import React from 'react';
-import { FileChangeEvent, ChangeType } from '/types.ts';
+import { ChangeType, ReportSummary, UserSummary } from '/types.ts';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import Icon from '/components/Icon.tsx';
 
 interface ReportViewProps {
-  changes: FileChangeEvent[];
+  totalChanges: number;
+  summary: ReportSummary;
+  userSummary: UserSummary;
   className?: string;
+  isExporting: boolean;
+  onExport: () => void;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
-const ReportView: React.FC<ReportViewProps> = ({ changes, className }) => {
-  const summary = changes.reduce(
-    (acc, change) => {
-      acc[change.type] = (acc[change.type] || 0) + 1;
-      return acc;
-    },
-    {} as { [key in ChangeType]?: number }
-  );
-  
-  const userSummary = changes.reduce((acc, change) => {
-      acc[change.user] = (acc[change.user] || 0) + 1;
-      return acc;
-  }, {} as {[key: string]: number});
-  
+const ReportView: React.FC<ReportViewProps> = ({ totalChanges, summary, userSummary, className, isExporting, onExport }) => {
   const userChartData = Object.entries(userSummary).map(([name, value]) => ({ name, value }));
-
 
   const barChartData = [
     {
@@ -35,8 +25,6 @@ const ReportView: React.FC<ReportViewProps> = ({ changes, className }) => {
       [ChangeType.DELETED]: summary[ChangeType.DELETED] || 0,
     },
   ];
-
-  const totalChanges = changes.length;
 
   const StatCard: React.FC<{ icon: React.ReactNode; label: string; value: number, colorClass: string }> = ({ icon, label, value, colorClass }) => (
     <div className="bg-base-100 p-4 rounded-lg border border-border flex items-center">
@@ -52,7 +40,35 @@ const ReportView: React.FC<ReportViewProps> = ({ changes, className }) => {
 
   return (
     <div className={`bg-base-100 rounded-lg border border-border p-4 flex flex-col ${className}`}>
-      <h3 className="text-lg font-semibold text-text-primary mb-4 flex-shrink-0">Report Summary</h3>
+        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+            <h3 className="text-lg font-semibold text-text-primary">Report Summary</h3>
+            <div className="flex items-center gap-4">
+                <div className="bg-blue-50 border-l-4 border-blue-400 p-2 text-xs text-blue-800 rounded-r-md">
+                    <p>This summary shows totals for <strong>all {totalChanges.toLocaleString()} filtered changes</strong>, not just the current page.</p>
+                </div>
+                <button
+                    onClick={onExport}
+                    disabled={isExporting || totalChanges === 0}
+                    className="flex items-center justify-center px-3 py-2 bg-primary text-white text-sm font-medium rounded-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                >
+                    {isExporting ? (
+                        <>
+                            <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Exporting...</span>
+                        </>
+                    ) : (
+                        <>
+                            <Icon name="export" className="w-5 h-5 mr-1.5" />
+                            <span>Export to CSV</span>
+                        </>
+                    )}
+                </button>
+            </div>
+        </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 flex-shrink-0">
         <StatCard 
             icon={<Icon name="pencil" className="w-6 h-6 text-blue-800"/>} 

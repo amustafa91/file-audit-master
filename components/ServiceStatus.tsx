@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ServiceStatus as ServiceStatusType } from '/types.ts';
+import Icon from '/components/Icon.tsx';
 
-const ServiceStatus = () => {
+interface ServiceStatusProps {
+  onViewLogs: () => void;
+  onOpenSettings: () => void;
+}
+
+const ServiceStatus: React.FC<ServiceStatusProps> = ({ onViewLogs, onOpenSettings }) => {
   const [status, setStatus] = useState<ServiceStatusType>('checking');
   const [isActionInProgress, setIsActionInProgress] = useState(false);
 
@@ -54,14 +60,19 @@ const ServiceStatus = () => {
     running: { text: 'Running', icon: <span className="w-2 h-2 rounded-full bg-green-500"></span> },
     stopped: { text: 'Stopped', icon: <span className="w-2 h-2 rounded-full bg-gray-400"></span> },
     error: { text: 'Error', icon: <span className="w-2 h-2 rounded-full bg-red-500"></span> },
-    checking: { text: 'Checking...', icon: <div className="w-2 h-2 rounded-full bg-yellow-500 animate-spin"></div> },
+    checking: { text: 'Checking...', icon: <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div> },
   };
 
   const currentStatus = statusConfig[status];
 
   return (
     <div className="p-2 border-t border-border flex-shrink-0">
-      <h3 className="text-xs font-semibold text-text-secondary px-2 mb-2">Monitoring Service</h3>
+      <div className="flex items-center justify-between px-2 mb-2">
+        <h3 className="text-xs font-semibold text-text-secondary">Monitoring Service</h3>
+        <button onClick={onOpenSettings} className="p-1 rounded text-text-secondary hover:bg-black/10 hover:text-text-primary" title="Settings">
+            <Icon name="settings" className="w-4 h-4" />
+        </button>
+      </div>
       <div className="bg-black/5 rounded-md p-3 text-sm">
         <div className="flex items-center justify-between mb-3">
             <span className="text-text-primary font-medium">Status</span>
@@ -84,6 +95,14 @@ const ServiceStatus = () => {
                 className="px-3 py-1.5 bg-base-300 text-text-primary text-xs font-medium rounded-md hover:bg-border disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
                 Stop
+            </button>
+        </div>
+        <div className="mt-2">
+           <button 
+                onClick={onViewLogs} 
+                className="w-full text-center px-3 py-1.5 bg-black/5 text-text-secondary text-xs font-medium rounded-md hover:bg-black/10 transition-colors"
+            >
+                View Logs
             </button>
         </div>
         <p className="text-xs text-text-secondary/80 mt-2 text-center">
