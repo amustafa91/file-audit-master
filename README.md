@@ -28,8 +28,8 @@ Download the latest pre-built installers for your operating system using the lin
 | Operating System | Download Link                                                                               |
 | ---------------- | ------------------------------------------------------------------------------------------- |
 | **Windows**      | [**Download .exe**](https://your-download-host.com/file-audit-master-latest.exe)             |
-| **macOS (Intel/Apple)**| [**Download .dmg**](https://your-download-host.com/file-audit-master-latest.dmg)       |
-| **Linux**        | [**Download .AppImage**](https://your-download-host.com/file-audit-master-latest.AppImage)   |
+| **macOS (Intel/Apple)**| [**Download .dmg**](to be added)       |
+| **Linux**        | [**Download .AppImage**](to be added)   |
 
 > **Note:** These are placeholder links. You will need to replace `https://your-download-host.com/...` with the actual URLs where you host your installer files.
 
