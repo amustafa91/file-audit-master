@@ -3,7 +3,7 @@
 **A professional, Windows-style desktop application for real-time file monitoring, detailed change logging, and visual reporting.**
 
 <p align="center">
-  <img src="https://via.placeholder.com/800x450.png?text=File+Audit+Master+Screenshot" alt="Application Screenshot">
+  <img src="https://github.com/amustafa91/file-audit-master/blob/main/Images/Screenshot.png" alt="Application Screenshot">
   <em>(Replace this with a real screenshot of the application)</em>
 </p>
 
