@@ -23,15 +23,11 @@
 
 ## 🚀 Download & Install
 
-Download the latest pre-built installers for your operating system using the links below.
+You can download the latest version of File Audit Master for Windows, macOS, and Linux directly from the project's **[GitHub Releases page](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/releases)**.
 
-| Operating System | Download Link                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------------- |
-| **Windows**      | [**Download .exe**](https://your-download-host.com/file-audit-master-latest.exe)             |
-| **macOS (Intel/Apple)**| [**Download .dmg**](to be added)       |
-| **Linux**        | [**Download .AppImage**](to be added)   |
+On the Releases page, simply find the latest version and download the appropriate installer for your operating system (`.exe` for Windows, `.dmg` for macOS, `.AppImage` for Linux).
 
-> **Note:** These are placeholder links. You will need to replace `https://your-download-host.com/...` with the actual URLs where you host your installer files.
+> **Note:** Please replace `YOUR_USERNAME/YOUR_REPOSITORY` in the link above with your actual GitHub username and repository name.
 
 ---
 
@@ -144,6 +140,59 @@ The following commands will build the frontend assets and then package them into
     ```bash
     npm run package:linux
     ```
+
+---
+
+## 🚢 Publishing a Release
+
+Instead of committing large installer files to your Git repository, the best practice is to use **GitHub Releases**. This provides a dedicated space to host your compiled application files for users to download.
+
+You can do this manually or automate it with a script.
+
+### Method 1: Manual Release (Simple)
+
+1.  **Build your application:** Run the appropriate packaging command for each OS you want to support.
+    ```bash
+    npm run package:win
+    npm run package:mac
+    npm run package:linux
+    ```
+    This will create the installers in the `dist/` directory.
+
+2.  **Navigate to GitHub Releases:** Go to your repository on GitHub and click on the "Releases" tab on the right-hand sidebar.
+
+3.  **Draft a new release:** Click the "Draft a new release" button.
+
+4.  **Tag your release:** Create a new tag for your version (e.g., `v1.0.0`). This marks the specific point in your code's history that this release corresponds to.
+
+5.  **Add release notes:** Give your release a title (e.g., `v1.0.0`) and write a description of the changes, new features, and bug fixes.
+
+6.  **Upload installers:** Drag and drop the installer files (`.exe`, `.dmg`, `.AppImage`) from your local `dist/` folder into the "Attach binaries" box.
+
+7.  **Publish:** Click "Publish release". Your installers are now publicly available for download!
+
+### Method 2: Automated Release (Advanced)
+
+`electron-builder` can automatically create a GitHub Release and upload your built files.
+
+1.  **Create a Personal Access Token (PAT):**
+    *   Go to your GitHub **Settings** > **Developer settings** > **Personal access tokens** > **Tokens (classic)**.
+    *   Click "Generate new token".
+    *   Give it a descriptive name (e.g., `electron-builder-release`).
+    *   Set an expiration date.
+    *   Check the `repo` scope. This grants the token permission to create releases in your public and private repositories.
+    *   Click "Generate token" and **copy the token immediately**. You won't be able to see it again.
+
+2.  **Set the token as an environment variable:** Before running the publish command, you must make this token available in your terminal session. **Do not commit this token to your code.**
+    *   **macOS/Linux:** `export GH_TOKEN="YOUR_TOKEN_HERE"`
+    *   **Windows (Command Prompt):** `set GH_TOKEN=YOUR_TOKEN_HERE`
+    *   **Windows (PowerShell):** `$env:GH_TOKEN="YOUR_TOKEN_HERE"`
+
+3.  **Run the publish script:** With the `GH_TOKEN` set, run the new `publish` script.
+    ```bash
+    npm run publish
+    ```
+    This command will build your application, create a draft release on GitHub, and upload the assets. You may need to go to the releases page to finalize and publish the draft.
 
 ---
 
