@@ -4,7 +4,6 @@
 
 <p align="center">
   <img src="https://github.com/amustafa91/file-audit-master/blob/main/Images/Screenshot.png" alt="Application Screenshot">
-  <em>(Replace this with a real screenshot of the application)</em>
 </p>
 
 ---
